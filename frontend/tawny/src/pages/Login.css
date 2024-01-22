@@ -1,0 +1,34 @@
+#loginBox{
+    position: absolute;
+
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+
+    border: 1px solid black;
+    width: 25vw;
+    height: 25vw;
+}
+#loginTitle{
+    text-align: center;
+    font-size: 2.5vw;
+    font-weight: bold;
+}
+.loginInput{
+    padding-top: 2.5vw;
+
+    width: 80%;
+    height: 5vw;
+    font-size: 1vw;
+
+    margin-left: 50%;
+    transform: translate(-50%, 0%);
+}
+#loginButton{
+    width: 80%;
+    font-size: 1vw;
+
+    height: 2vw;
+    margin-left: 50%;
+    transform: translate(-50%, 0%);
+}

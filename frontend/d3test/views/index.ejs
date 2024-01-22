@@ -1,0 +1,249 @@
+<!--Ejs File-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" 
+          content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+        #d3elem {
+            position: absolute;
+            left: 0;
+            top: 0;
+
+            width: 100%;
+            height: 100%;
+        }
+        #popup{
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 400px;
+            height: 500px;
+            background-color: white;
+            border: 1px solid black;
+            z-index: 100;
+            display: none;
+            padding: 10px;
+            box-sizing: border-box;
+            cursor: move;
+
+            overflow: scroll;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="d3elem"></div>
+    <div id="popup"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script>
+        //Get data from the backend
+        var arangoResults = <%- JSON.stringify(arangoResults) %>;
+        console.log(arangoResults);
+
+        //get the height and width of the window
+        var body = document.body,
+            html = document.documentElement;
+        var height = Math.max( body.scrollHeight, body.offsetHeight, 
+                       html.clientHeight, html.scrollHeight, html.offsetHeight );
+        var width = Math.max( body.scrollWidth, body.offsetWidth, 
+                       html.clientWidth, html.scrollWidth, html.offsetWidth );
+
+        //other constants
+        var circleRadius = 50;
+        var strokeWidth = 1;
+        var fontSize = 15;
+        var centerForce = 0.02;
+
+        //Create svg element
+        var svg = d3.select("#d3elem").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        //Set random initial position for the circles
+        arangoResults.forEach(d => {
+            d.x = Math.random() * width * 3;
+            d.y = Math.random() * height * 3;
+        });
+
+        //Create svg defs using profile_picture urls
+        const defs = svg.append("defs");
+        arangoResults.forEach(function(d){
+            defs.append("pattern")
+                .attr("id", d._key)
+                .attr("height", 1)
+                .attr("width", 1)
+                .attr("patternUnits", "objectBoundingBox")
+                .append("image")
+                    .attr("height", circleRadius*2)
+                    .attr("width", circleRadius*2)
+                    .attr("preserveAspectRatio", "xMidYMid slice")
+                    .attr("xlink:href", d.profile_picture);
+        });
+
+        //create container element for zoom functionality
+        const container = svg.append("g");
+
+        //create a circle for each node at a random location
+        //Add text on top of the circle
+        const groups = container.selectAll("g")
+            .data(arangoResults)
+            .enter()
+            .append("g")
+
+        groups.append("circle")
+            .attr("r", circleRadius)
+            .attr("stroke", "black")
+            .attr("stroke-width", strokeWidth)
+            .attr("fill", function(d){
+                return `url(#${d._key})`;
+            })
+            
+            //Add onclick to the circle, adding the data to the popup element innerhtml
+            .attr("cursor", "pointer")
+            .on("click", function(event, d){
+                var popup = document.getElementById("popup");
+
+                //innerHTML should be a table with the data, given unknown keys
+                popup.innerHTML = `
+                    <table>
+                        <tr>
+                            <th>Key</th>
+                            <th>Value</th>
+                        </tr>
+                        ${Object.keys(d).map(key => `<tr><td>${key}</td><td>${d[key]}</td></tr>`).join("")}
+                    </table>
+                `;
+            });
+
+        //function to truncate text to fit in the circle
+        function truncateText(text, length) {
+            if (text.length > length) {
+                return text.substring(0, length) + "...";
+            } else {
+                return text;
+            }
+        }
+
+        groups.append("text")
+            .text(function(d) {
+                return truncateText(d.name, 10);
+            })
+            .attr("text-anchor", "middle")
+            .attr("dy", 5)
+            .attr("font-size", fontSize)
+            .attr("font-weight", "bold")
+            .attr("fill", "white")
+            .style("text-shadow", "1px 1px 1px rgba(0, 0, 0, 0.5), -1px -1px 1px rgba(0, 0, 0, 0.5), -1px 1px 1px rgba(0, 0, 0, 0.5), 1px -1px 1px rgba(0, 0, 0, 0.5)");
+    
+        //create a force simulation so circles don't overlap
+        //Also add a force towards the center of the screen
+        const simulation = d3.forceSimulation(arangoResults)
+            .force('collision', d3.forceCollide(circleRadius + strokeWidth + 5))
+            .force('x', d3.forceX(width / 2).strength(centerForce))
+            .force('y', d3.forceY(height / 2).strength(centerForce));
+
+        //add zoom functionality via d3
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 10])
+            .on("zoom", zoomed);
+        function zoomed(event) {
+            container.attr("transform", event.transform);
+        }
+        svg.call(zoom);
+
+        function ticked() {
+            groups.attr("transform", d => `translate(${d.x}, ${d.y})`);
+        }
+        simulation.on("tick", ticked);
+
+        //Add ability to drag nodes
+        const drag = d3.drag()
+            .on("start", dragstarted)
+            .on("drag", dragged)
+            .on("end", dragended);
+
+        function dragstarted(event, d){
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+
+            //pause the force dragging things to the center
+            simulation.force("x", null);
+            simulation.force("y", null);
+
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        function dragged(event, d){
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        function dragended(event, d){
+            if (!event.active) simulation.alphaTarget(0);
+
+            //resume force dragging things to the center
+            simulation.force("x", d3.forceX(width / 2).strength(centerForce));
+            simulation.force("y", d3.forceY(height / 2).strength(centerForce));
+
+            d.fx = null;
+            d.fy = null;
+        }
+        groups.call(drag);
+    </script>
+    <script>
+        //create a draggable popup window for viewing node data and performing other actions
+        var div = document.getElementById("popup");
+        
+        //make the div element draggable
+        var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        document.getElementById("popup").onmousedown = dragMouseDown;
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // get the mouse cursor position at startup:
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            // call a function whenever the cursor moves:
+            document.onmousemove = elementDrag;
+        }
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // calculate the new cursor position:
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            // set the element's new position:
+            div.style.top = (div.offsetTop - pos2) + "px";
+            div.style.left = (div.offsetLeft - pos1) + "px";
+        }
+        function closeDragElement() {
+            // stop moving when mouse button is released:
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
+
+        //Have the popup toggle whenever you press Ctrl+Alt+P
+        document.addEventListener("keydown", function(e){
+            if (e.ctrlKey && e.altKey && e.key === "p"){
+                var popup = document.getElementById("popup");
+                if (popup.style.display === "none"){
+                    popup.style.display = "block";
+                } else {
+                    popup.style.display = "none";
+                }
+            }
+        });
+    </script>
+</body>
+</html>
